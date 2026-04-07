@@ -72,7 +72,7 @@ def build_address(props):
     if not addr:
         return None
     if zipcd:
-        addr += f", DAYTON OH {zipcd}"
+        addr += f", OH {zipcd}"
     return addr.title().replace(" Oh ", " OH ")
 
 

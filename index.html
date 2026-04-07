@@ -36,6 +36,25 @@
     header h1 { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
     header .subtitle { font-size: 0.78rem; opacity: 0.8; margin-top: 2px; }
 
+    .city-picker-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .city-picker-row label { font-size: 0.78rem; white-space: nowrap; opacity: 0.85; }
+    .city-picker-row select {
+      font-size: 0.82rem;
+      padding: 5px 8px;
+      border-radius: 4px;
+      border: none;
+      background: rgba(255,255,255,0.15);
+      color: white;
+      cursor: pointer;
+    }
+    .city-picker-row select option { background: #1a5276; color: white; }
+    .city-picker-row select:focus { outline: 2px solid #85c1e9; }
+
     /* ── Main layout ── */
     .main {
       display: flex;
@@ -246,7 +265,13 @@
 <header>
   <div>
     <h1>🐔 Can I Have Chickens Here?</h1>
-    <div class="subtitle">Dayton, OH · Zoning Explorer · Code for Dayton Demo</div>
+    <div class="subtitle">Montgomery County, OH · Zoning Explorer · Code for Dayton Demo</div>
+  </div>
+  <div class="city-picker-row">
+    <label for="city-select">City:</label>
+    <select id="city-select" onchange="switchCity(this.value)">
+      <!-- populated by JS from CITIES -->
+    </select>
   </div>
 </header>
 
@@ -266,8 +291,7 @@
     <div class="panel-inner" id="panel-content">
       <div class="panel-placeholder">
         <span class="emoji">🗺️</span>
-        Click any parcel on the map to see its zoning information and ask whether
-        you can keep backyard chickens or bunnies there.
+        Click any parcel on the map to see its zoning information and animal-keeping rules.
       </div>
     </div>
   </div>
@@ -286,11 +310,11 @@
      SCRIPTS
 ══════════════════════════════════════════ -->
 <script type="module">
+import { CITIES, CITIES_BY_ID, genericZoneColor } from './cities.js';
+
 // ─────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────
-const DAYTON_CENTER = [39.7589, -84.1916];
-const DAYTON_ZOOM   = 13;
 
 // Local parcel server (server.py).  Start with: python3 server.py
 const PARCEL_SERVER = 'http://localhost:8001/parcels';
@@ -307,88 +331,13 @@ const FIELD_CANDIDATES = {
 };
 
 // ─────────────────────────────────────────────
-// ZONE STYLING  (Dayton zone codes from SHAPEFILE_ZONING/Zoning.shp)
-// ─────────────────────────────────────────────
-const ZONE_COLORS = {
-  // Residential
-  'SR-1': '#c8e6c9',  // Suburban Residential 1
-  'SR-2': '#a5d6a7',  // Suburban Residential 2
-  'MR-5': '#81c784',  // Mature Residential 5
-  'ER-3': '#dcedc8',  // Eclectic Residential 3
-  'ER-4': '#f0f4c3',  // Eclectic Residential 4
-  'MH':   '#ffe082',  // Manufactured Home
-  // Multi-family
-  'SMF':  '#fff9c4',
-  'MMF':  '#fff176',
-  'EMF':  '#ffee58',
-  // Commercial
-  'SNC':  '#ffe0b2',
-  'MNC':  '#ffcc80',
-  'ENC':  '#ffb74d',
-  'SGC':  '#ff8a65',
-  'MGC':  '#ff7043',
-  'EGC':  '#f4511e',
-  'CBD':  '#ef9a9a',
-  'UBD':  '#e57373',
-  'BP':   '#ce93d8',
-  'MX':   '#ba68c8',
-  // Institutional / civic
-  'CI':   '#b3e5fc',
-  'OS':   '#b9f6ca',
-  'AIRPORT': '#cfd8dc',
-  'WO':   '#d7ccc8',
-  // Industrial
-  'I-1':  '#ffcdd2',
-  'I-2':  '#ef9a9a',
-  // Transitional / unknown
-  'T':    '#e0e0e0',
-  'DEFAULT': '#eeeeee',
-};
-
-const ZONE_NAMES = {
-  'SR-1': 'Suburban Residential 1',
-  'SR-2': 'Suburban Residential 2',
-  'MR-5': 'Mature Residential 5',
-  'ER-3': 'Eclectic Residential 3',
-  'ER-4': 'Eclectic Residential 4',
-  'MH':   'Manufactured Home District',
-  'SMF':  'Suburban Multi-Family',
-  'MMF':  'Mature Multi-Family',
-  'EMF':  'Eclectic Multi-Family',
-  'SNC':  'Suburban Neighborhood Commercial',
-  'MNC':  'Mature Neighborhood Commercial',
-  'ENC':  'Eclectic Neighborhood Commercial',
-  'SGC':  'Suburban General Commercial',
-  'MGC':  'Mature General Commercial',
-  'EGC':  'Eclectic General Commercial',
-  'CBD':  'Central Business District',
-  'UBD':  'Urban Business District',
-  'BP':   'Business Park',
-  'MX':   'Mixed Use Hub District',
-  'CI':   'Campus-Institutional',
-  'OS':   'Open Space',
-  'AIRPORT': 'Airport',
-  'WO':   'Well Head Operation',
-  'I-1':  'Light Industrial',
-  'I-2':  'General Industrial',
-  'T':    'Transitional',
-};
-
-// Residential zones where chickens are permitted with a permit
-const CHICKEN_PERMITTED    = new Set(['SR-1', 'SR-2', 'MR-5']);
-const CHICKEN_CONDITIONAL  = new Set(['ER-3', 'ER-4', 'MH', 'SMF', 'MMF', 'EMF']);
-const CHICKEN_NOT_PERMITTED = new Set(['CBD', 'UBD', 'BP', 'SGC', 'MGC', 'EGC', 'SNC', 'MNC', 'ENC', 'CI', 'I-1', 'I-2', 'AIRPORT', 'MX']);
-
-// ─────────────────────────────────────────────
-// SAMPLE FALLBACK DATA
-// Used when the live ArcGIS endpoint is unavailable.
-// 15 representative Dayton parcels across real neighborhoods.
-// ─────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────
+let activeCity      = CITIES[0];   // default: Dayton
 let selectedLayer   = null;
 let lastParcelData  = null;
-let zoningFeatures  = [];   // loaded once from /zoning
+let allZoningFeatures = [];  // all features loaded from /zoning
+let zoningFeatures    = [];  // filtered to activeCity
 
 // ─────────────────────────────────────────────
 // POINT-IN-POLYGON  (ray-casting, handles Polygon + MultiPolygon)
@@ -433,7 +382,7 @@ function findZone(latlng) {
 // ─────────────────────────────────────────────
 // MAP SETUP
 // ─────────────────────────────────────────────
-const map = L.map('map').setView(DAYTON_CENTER, DAYTON_ZOOM);
+const map = L.map('map').setView(activeCity.center, activeCity.zoom);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -445,7 +394,7 @@ const zoningLayer = L.geoJSON(null, {
   style(feature) {
     const code = feature.properties.ZONE_CODE?.trim().toUpperCase();
     return {
-      fillColor:   ZONE_COLORS[code] || ZONE_COLORS.DEFAULT,
+      fillColor:   zoneColor(code),
       fillOpacity: 0.55,
       color:       '#aaa',
       weight:      0.5,
@@ -463,13 +412,47 @@ async function loadZoning() {
     const res = await fetch(`${PARCEL_SERVER.replace('/parcels', '/zoning')}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    zoningFeatures = data.features || [];
-    zoningLayer.addData(data);
-    buildLegend();
+    allZoningFeatures = data.features || [];
+    applyZoningForCity(activeCity);
   } catch (err) {
     console.warn('Zoning layer unavailable:', err.message);
   }
 }
+
+function applyZoningForCity(city) {
+  zoningFeatures = allZoningFeatures.filter(
+    f => f.properties.ZONE_JAREA === city.zoningFilter
+  );
+  zoningLayer.clearLayers();
+  if (zoningFeatures.length > 0) {
+    zoningLayer.addData({ type: 'FeatureCollection', features: zoningFeatures });
+    removeBanner('no-zoning');
+  } else if (allZoningFeatures.length > 0) {
+    // Data loaded but nothing for this city — zoning.geojson needs rebuilding
+    showBanner('no-zoning',
+      `No zoning data found for ${city.name}. Rebuild <code>zoning.geojson</code> without the <code>ZONE_JAREA</code> filter — see README.`);
+  }
+  buildLegend();
+}
+
+window.switchCity = function(id) {
+  const city = CITIES_BY_ID[id];
+  if (!city || city === activeCity) return;
+  activeCity = city;
+
+  map.setView(city.center, city.zoom);
+  applyZoningForCity(city);
+
+  // Clear any selected parcel and reset the panel
+  if (selectedLayer) {
+    selectedLayer.setStyle(parcelStyle());
+    selectedLayer.bringToBack();
+  }
+  clearSelection();
+  document.getElementById('panel-content').innerHTML = panelPlaceholder();
+
+  scheduleLoad();
+};
 
 // ─────────────────────────────────────────────
 // FIELD EXTRACTION — handles multiple possible field names
@@ -495,7 +478,7 @@ function extractParcelFields(props, zoneProps) {
     parcelId:  props.TAXPINNO || '—',
     address:   props.ADDRESS  || 'Address unknown',
     zoneCode,
-    zoneName:  zoneCode ? (ZONE_NAMES[zoneCode] || zoneCode) : 'Zone not found',
+    zoneName:  zoneCode ? ((activeCity.zoneNames || {})[zoneCode] || zoneCode) : 'Zone not found',
     zoneDesc,
     acres,
     sqft:      acres ? Math.round(acres * 43560).toLocaleString() : (props.SQFT ? Number(props.SQFT).toLocaleString() : null),
@@ -508,7 +491,7 @@ function extractParcelFields(props, zoneProps) {
 // ─────────────────────────────────────────────
 function zoneColor(zone) {
   const z = (zone || '').trim().toUpperCase();
-  return ZONE_COLORS[z] || ZONE_COLORS.DEFAULT;
+  return (activeCity.zoneColors || {})[z] || genericZoneColor(z);
 }
 
 function parcelStyle() {
@@ -524,91 +507,112 @@ function highlightStyle() {
 // ─────────────────────────────────────────────
 function renderPanel(parcel) {
   const color = zoneColor(parcel.zoneCode);
-  const z = parcel.zoneCode;
+  const z     = parcel.zoneCode;
+  const city  = activeCity;
 
-  // Chicken status + rules
-  let chickenStatus, chickenRules;
-  if (!z) {
-    chickenStatus = '<span style="color:#777">Zone not found — click inside a parcel boundary</span>';
-    chickenRules  = '';
-  } else if (CHICKEN_NOT_PERMITTED.has(z)) {
-    chickenStatus = '<span style="color:#c62828">✗ Not permitted in this zone</span>';
-    chickenRules  = '<ul class="reg-rules"><li>Chickens are only allowed in residential zones</li></ul>';
-  } else if (CHICKEN_PERMITTED.has(z)) {
-    chickenStatus = '<span style="color:#2e7d32">✓ Permitted (with zoning permit)</span>';
-    chickenRules  = `<ul class="reg-rules">
-      <li>Maximum <strong>4 hens</strong> — no roosters ever</li>
-      <li><strong>Permit required</strong> from the Zoning Division before acquiring birds</li>
-      <li>Coop must be <strong>25 ft</strong> from any neighbor's door or window</li>
-      <li>Min. 4 sq ft/bird inside coop; 10 sq ft/bird in outdoor run</li>
-      <li>Must be kept in enclosed run — no free-roaming</li>
-      <li>Personal use only; no commercial egg sales</li>
-    </ul>`;
-  } else if (CHICKEN_CONDITIONAL.has(z)) {
-    chickenStatus = '<span style="color:#e65100">⚠ Conditional use — ZBA approval required</span>';
-    chickenRules  = `<ul class="reg-rules">
-      <li>Must apply to the <strong>Zoning Board of Appeals</strong> for a conditional use permit</li>
-      <li>If approved: max 4 hens, no roosters, same coop/setback rules apply</li>
-      <li>Approval is not guaranteed — contact Zoning Division first</li>
-    </ul>`;
-  } else {
-    chickenStatus = '<span style="color:#777">Zone type unclear — verify with City</span>';
-    chickenRules  = '';
-  }
-
-  // Rabbit status — allowed in all residential, not elsewhere
-  const isResidential = z && (CHICKEN_PERMITTED.has(z) || CHICKEN_CONDITIONAL.has(z));
-  let rabbitStatus, rabbitRules;
-  if (!z) {
-    rabbitStatus = '<span style="color:#777">Zone not found</span>';
-    rabbitRules  = '';
-  } else if (isResidential) {
-    rabbitStatus = '<span style="color:#2e7d32">✓ Permitted as pets</span>';
-    rabbitRules  = `<ul class="reg-rules">
-      <li>Up to <strong>4 rabbits outdoors</strong> without a special permit</li>
-      <li>Outdoor hutch must be <strong>5 ft</strong> from property lines</li>
-      <li><strong>Indoor rabbits</strong>: no limit, no permit needed</li>
-      <li>No commercial breeding without a special use permit</li>
-    </ul>`;
-  } else {
-    rabbitStatus = '<span style="color:#c62828">✗ Not permitted in this zone</span>';
-    rabbitRules  = '<ul class="reg-rules"><li>Rabbits as outdoor animals are limited to residential zones</li></ul>';
-  }
-
-  document.getElementById('panel-content').innerHTML = `
+  // ── Parcel header (same for all cities) ──
+  const parcelHeader = `
     <div class="parcel-header">${parcel.address}</div>
     <div class="zone-badge" style="background:${color}; color:#333;">${z ? z + ' · ' : ''}${parcel.zoneName}</div>
-
     <table class="detail-table">
       <tr><td>Lot size</td><td>${parcel.acres != null ? parcel.acres + ' ac' : '—'}${parcel.sqft ? ' · ' + parcel.sqft + ' sq ft' : ''}</td></tr>
       ${parcel.propClass ? `<tr><td>Use type</td><td>${parcel.propClass}</td></tr>` : ''}
       <tr><td>Parcel ID</td><td style="font-size:0.78rem;color:#555">${parcel.parcelId}</td></tr>
     </table>
-
     <hr class="divider">
-
-    <div class="reg-section">
-      <div class="reg-heading">🐔 Backyard Chickens</div>
-      <div class="reg-status">${chickenStatus}</div>
-      ${chickenRules}
-    </div>
-
-    <div class="reg-section">
-      <div class="reg-heading">🐇 Domestic Rabbits</div>
-      <div class="reg-status">${rabbitStatus}</div>
-      ${rabbitRules}
-    </div>
-
-    <div class="reg-sources">
-      <strong>Official sources:</strong><br>
-      <a href="https://library.municode.com/oh/dayton/codes/code_of_ordinances" target="_blank" rel="noopener">
-        Dayton Code of Ordinances (Municode)
-      </a> — Ch. 91 (Animals), Ch. 150 (Zoning)<br>
-      <a href="https://www.daytonohio.gov/229/Zoning-Code-Map" target="_blank" rel="noopener">
-        City of Dayton Zoning Division
-      </a> · (937) 333-3910
-    </div>
   `;
+
+  // ── Regulation content ──
+  let regContent;
+
+  if (!city.ordinanceKnown) {
+    // Stub city — show zone info but no chicken rules
+    const src = city.sources;
+    const links = [
+      src.municode ? `<a href="${src.municode}" target="_blank" rel="noopener">${src.name} — Municode</a>` : null,
+      src.zoning   ? `<a href="${src.zoning}"   target="_blank" rel="noopener">${src.name} — Zoning</a>` : null,
+      src.phone    ? `Phone: ${src.phone}` : null,
+    ].filter(Boolean).join('<br>');
+
+    regContent = `
+      <div class="reg-section">
+        <div class="reg-heading">🐔 Chickens &amp; 🐇 Rabbits</div>
+        <div class="reg-status" style="color:#777">
+          Ordinance data for ${city.name} hasn't been added yet.
+        </div>
+        <ul class="reg-rules">
+          <li>Zone shown: <strong>${z || 'unknown'}</strong></li>
+          <li>Check your local code for animal-keeping rules</li>
+        </ul>
+      </div>
+      <div class="reg-sources">
+        <strong>Verify with ${city.name}:</strong><br>
+        ${links || 'Contact your local planning department'}
+      </div>
+    `;
+  } else {
+    // Full ordinance data available
+    const permitted   = city.chickenPermitted   || [];
+    const conditional = city.chickenConditional || [];
+    const isResidential = z && (permitted.includes(z) || conditional.includes(z));
+
+    // Chicken status
+    let chickenStatus, chickenRules;
+    if (!z) {
+      chickenStatus = '<span style="color:#777">Zone not found — click inside a parcel boundary</span>';
+      chickenRules  = '';
+    } else if (permitted.includes(z)) {
+      chickenStatus = '<span style="color:#2e7d32">✓ Permitted (with zoning permit)</span>';
+      chickenRules  = `<ul class="reg-rules">${(city.chickenRules || []).map(r => `<li>${r}</li>`).join('')}</ul>`;
+    } else if (conditional.includes(z)) {
+      chickenStatus = '<span style="color:#e65100">⚠ Conditional use — ZBA approval required</span>';
+      chickenRules  = `<ul class="reg-rules">
+        <li>Must apply to the <strong>Zoning Board of Appeals</strong> for a conditional use permit</li>
+        <li>If approved, the same coop and setback rules apply as permitted zones</li>
+        <li>Approval is not guaranteed — contact Zoning Division first</li>
+      </ul>`;
+    } else {
+      chickenStatus = '<span style="color:#c62828">✗ Not permitted in this zone</span>';
+      chickenRules  = '<ul class="reg-rules"><li>Chickens are only allowed in residential zones</li></ul>';
+    }
+
+    // Rabbit status
+    let rabbitStatus, rabbitRules;
+    if (!z) {
+      rabbitStatus = '<span style="color:#777">Zone not found</span>';
+      rabbitRules  = '';
+    } else if (isResidential) {
+      rabbitStatus = '<span style="color:#2e7d32">✓ Permitted as pets</span>';
+      rabbitRules  = `<ul class="reg-rules">${(city.rabbitRules || []).map(r => `<li>${r}</li>`).join('')}</ul>`;
+    } else {
+      rabbitStatus = '<span style="color:#c62828">✗ Not permitted in this zone</span>';
+      rabbitRules  = '<ul class="reg-rules"><li>Outdoor rabbits are limited to residential zones</li></ul>';
+    }
+
+    const src = city.sources;
+    const sourceLinks = [
+      src.municode ? `<a href="${src.municode}" target="_blank" rel="noopener">${city.name} Code of Ordinances (Municode)</a>${src.municodeLabel ? ' — ' + src.municodeLabel : ''}` : null,
+      src.zoning   ? `<a href="${src.zoning}"   target="_blank" rel="noopener">${src.name}</a>${src.phone ? ' · ' + src.phone : ''}` : null,
+    ].filter(Boolean).join('<br>');
+
+    regContent = `
+      <div class="reg-section">
+        <div class="reg-heading">🐔 Backyard Chickens</div>
+        <div class="reg-status">${chickenStatus}</div>
+        ${chickenRules}
+      </div>
+      <div class="reg-section">
+        <div class="reg-heading">🐇 Domestic Rabbits</div>
+        <div class="reg-status">${rabbitStatus}</div>
+        ${rabbitRules}
+      </div>
+      <div class="reg-sources">
+        <strong>Official sources:</strong><br>${sourceLinks}
+      </div>
+    `;
+  }
+
+  document.getElementById('panel-content').innerHTML = parcelHeader + regContent;
 }
 
 // ─────────────────────────────────────────────
@@ -768,24 +772,43 @@ window.removeBanner = function(id) {
 // ─────────────────────────────────────────────
 function buildLegend() {
   const seen = new Map(); // code → name
+  const names = activeCity.zoneNames || {};
   for (const f of zoningFeatures) {
     const code = f.properties.ZONE_CODE?.trim().toUpperCase();
-    if (code && !seen.has(code)) seen.set(code, ZONE_NAMES[code] || f.properties.ZONE_DESC || code);
+    if (code && !seen.has(code)) seen.set(code, names[code] || f.properties.ZONE_DESC || code);
   }
 
   const legend = document.getElementById('legend');
-  legend.innerHTML = '<span class="legend-title">Zone</span>';
+  legend.innerHTML = `<span class="legend-title">${activeCity.name} Zones</span>`;
   for (const [code, name] of [...seen].sort()) {
     const item = document.createElement('div');
     item.className = 'legend-item';
-    item.innerHTML = `<div class="legend-swatch" style="background:${ZONE_COLORS[code] || ZONE_COLORS.DEFAULT}"></div>${code}<span class="legend-tooltip">${name}</span>`;
+    item.innerHTML = `<div class="legend-swatch" style="background:${zoneColor(code)}"></div>${code}<span class="legend-tooltip">${name}</span>`;
     legend.appendChild(item);
   }
+}
+
+function panelPlaceholder() {
+  return `<div class="panel-placeholder">
+    <span class="emoji">🗺️</span>
+    Click any parcel on the map to see its zoning information and animal-keeping rules.
+  </div>`;
 }
 
 // ─────────────────────────────────────────────
 // INIT
 // ─────────────────────────────────────────────
+
+// Populate city picker
+const citySelect = document.getElementById('city-select');
+for (const city of CITIES) {
+  const opt = document.createElement('option');
+  opt.value = city.id;
+  opt.textContent = city.name;
+  if (city === activeCity) opt.selected = true;
+  citySelect.appendChild(opt);
+}
+
 loadZoning();   // loads zoning polygons + rebuilds legend
 loadViewport(); // loads parcel outlines for current viewport
 </script>

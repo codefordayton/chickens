@@ -81,12 +81,21 @@ Leaflet's `bringToFront()` can re-append a detached SVG element to the canvas.
 - **Not** the traditional R-1/R-2/B-1 system; those appear in other county jurisdictions.
 
 ### Regenerating zoning.geojson
+Include all Montgomery County jurisdictions so the city picker works:
 ```bash
 ogr2ogr -f GeoJSON zoning.geojson \
-  -where "ZONE_JAREA='DAYTON'" \
   -t_srs EPSG:4326 \
   -select 'ZONE_CODE,ZONE_DESC,ZONE_JAREA' \
   SHAPEFILE_ZONING/Zoning.shp
+```
+To see all ZONE_JAREA values (needed when adding a city to `cities.js`):
+```bash
+ogr2ogr -f CSV /vsistdout/ -select 'ZONE_JAREA' SHAPEFILE_ZONING/Zoning.shp | sort -u
+```
+To list zone codes for a specific jurisdiction:
+```bash
+ogr2ogr -f CSV /vsistdout/ -where "ZONE_JAREA='KETTERING'" \
+  -select 'ZONE_CODE,ZONE_DESC' SHAPEFILE_ZONING/Zoning.shp | sort -u
 ```
 
 ## Ordinance text

@@ -64,7 +64,7 @@ included in every Claude prompt.
 | Dataset | Source | Date |
 |---------|--------|------|
 | Parcel polygons (`parcels.shp`) | [Montgomery County GIS Downloads](https://www.mcohio.org/631/GIS-Downloads) | 2026-04-02 |
-| Zoning districts (`SHAPEFILE_ZONING/`) | [Montgomery County GIS Downloads](https://www.mcohio.org/631/GIS-Downloads) | 2022-02-01 |
+| Zoning districts (`SHAPEFILE_ZONING/`) | [Montgomery County GIS Downloads](https://www.mcohio.org/631/GIS-Downloads) | 2022-02-01 — all jurisdictions |
 | Ordinance text | Municode (secondary sources) | ~2024 |
 | Base map | OpenStreetMap | live |
 
@@ -76,6 +76,15 @@ and place `parcels.shp` (+ sidecar files) and the zoning shapefile folder
 **Note:** The parcel shapefile is the county auditor's file — it tracks ownership
 and tax data, not zoning. Zoning comes from the separate planning department
 shapefile in `SHAPEFILE_ZONING/`.
+
+After downloading both shapefiles, rebuild `zoning.geojson` to include all Montgomery County jurisdictions:
+
+```bash
+ogr2ogr -f GeoJSON zoning.geojson \
+  -t_srs EPSG:4326 \
+  -select 'ZONE_CODE,ZONE_DESC,ZONE_JAREA' \
+  SHAPEFILE_ZONING/Zoning.shp
+```
 
 ---
 
