@@ -1,0 +1,13 @@
+# GIS shapefiles — download from https://www.mcohio.org/631/GIS-Downloads
+parcels.CPG
+parcels.dbf
+parcels.prj
+parcels.sbn
+parcels.sbx
+parcels.shp
+parcels.shp.xml
+parcels.shx
+SHAPEFILE_ZONING/
+
+# macOS
+.DS_Store

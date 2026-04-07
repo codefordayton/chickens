@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Can I Have Chickens Here? — Dayton Zoning Explorer</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #222;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #1a5276;
+      color: white;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
+    header .subtitle { font-size: 0.78rem; opacity: 0.8; margin-top: 2px; }
+
+    /* ── Main layout ── */
+    .main {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Map ── */
+    #map {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* ── Info panel ── */
+    #panel {
+      width: 340px;
+      flex-shrink: 0;
+      background: white;
+      border-left: 1px solid #ddd;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-inner {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    .panel-placeholder {
+      color: #888;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      padding-top: 24px;
+      text-align: center;
+    }
+    .panel-placeholder .emoji { font-size: 2.5rem; display: block; margin-bottom: 12px; }
+
+    /* Parcel details */
+    .parcel-header {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #1a5276;
+      margin-bottom: 4px;
+      line-height: 1.3;
+    }
+    .zone-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+
+    .detail-table {
+      width: 100%;
+      font-size: 0.83rem;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+    }
+    .detail-table td { padding: 4px 0; vertical-align: top; }
+    .detail-table td:first-child { color: #666; width: 100px; }
+    .detail-table td:last-child { font-weight: 500; }
+
+    .divider { border: none; border-top: 1px solid #eee; margin: 12px 0; }
+
+    /* ── Regulation sections ── */
+    .reg-section {
+      margin-bottom: 14px;
+    }
+    .reg-heading {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #1a5276;
+      margin-bottom: 4px;
+    }
+    .reg-status {
+      font-size: 0.82rem;
+      margin-bottom: 6px;
+    }
+    .reg-rules {
+      font-size: 0.8rem;
+      color: #444;
+      padding-left: 16px;
+      margin: 0;
+      line-height: 1.6;
+    }
+    .reg-rules li { margin: 2px 0; }
+    .reg-sources {
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid #eee;
+      font-size: 0.78rem;
+      color: #666;
+    }
+    .reg-sources a {
+      color: #1a5276;
+      text-decoration: none;
+    }
+    .reg-sources a:hover { text-decoration: underline; }
+
+    /* ── Legend ── */
+    #legend {
+      background: white;
+      border-top: 1px solid #ddd;
+      padding: 8px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    #legend .legend-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #666;
+      margin-right: 4px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.72rem;
+      color: #444;
+      position: relative;
+      cursor: default;
+    }
+    .legend-item:hover .legend-tooltip {
+      display: block;
+    }
+    .legend-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 5px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.78);
+      color: #fff;
+      font-size: 0.72rem;
+      white-space: nowrap;
+      padding: 3px 8px;
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: 1000;
+    }
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid rgba(0,0,0,0.15);
+      flex-shrink: 0;
+    }
+
+    /* loading overlay */
+    #load-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,255,255,0.92);
+      padding: 16px 24px;
+      border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      font-size: 0.9rem;
+      color: #444;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #load-overlay .ld-spinner {
+      width: 18px; height: 18px;
+      border: 3px solid #ddd;
+      border-top-color: #1a5276;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    /* zone tooltip */
+    .zone-tip {
+      font-size: 0.75rem;
+      padding: 3px 7px;
+      background: rgba(0,0,0,0.72);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+    }
+    .zone-tip::before { display: none; }
+
+    /* mobile */
+    @media (max-width: 640px) {
+      .main { flex-direction: column; }
+      #map { height: 55vw; min-height: 240px; }
+      #panel { width: 100%; border-left: none; border-top: 1px solid #ddd; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════
+     HEADER
+══════════════════════════════════════════ -->
+<header>
+  <div>
+    <h1>🐔 Can I Have Chickens Here?</h1>
+    <div class="subtitle">Dayton, OH · Zoning Explorer · Code for Dayton Demo</div>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════════════
+     MAIN: MAP + PANEL
+══════════════════════════════════════════ -->
+<div class="main">
+
+  <div id="map" style="position:relative;">
+    <div id="load-overlay">
+      <div class="ld-spinner"></div>
+      Loading Dayton parcels…
+    </div>
+  </div>
+
+  <div id="panel">
+    <div class="panel-inner" id="panel-content">
+      <div class="panel-placeholder">
+        <span class="emoji">🗺️</span>
+        Click any parcel on the map to see its zoning information and ask whether
+        you can keep backyard chickens or bunnies there.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════
+     LEGEND
+══════════════════════════════════════════ -->
+<div id="legend">
+  <span class="legend-title">Zone</span>
+  <!-- populated by JS -->
+</div>
+
+<!-- ══════════════════════════════════════════
+     SCRIPTS
+══════════════════════════════════════════ -->
+<script type="module">
+// ─────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────
+const DAYTON_CENTER = [39.7589, -84.1916];
+const DAYTON_ZOOM   = 13;
+
+// Local parcel server (server.py).  Start with: python3 server.py
+const PARCEL_SERVER = 'http://localhost:8001/parcels';
+
+// Field names as returned by server.py's enriched GeoJSON
+// (server constructs ADDRESS and ACRES from raw shapefile components)
+const FIELD_CANDIDATES = {
+  parcelId: ['TAXPINNO'],
+  address:  ['ADDRESS'],
+  zone:     ['PARCEL_USE'],   // no formal zone code in this dataset; USE_DESC has description
+  acres:    ['ACRES'],
+  propClass:['PARCEL_USE', 'USE_DESC'],
+  city:     [],               // server always adds Dayton context in the address
+};
+
+// ─────────────────────────────────────────────
+// ZONE STYLING  (Dayton zone codes from SHAPEFILE_ZONING/Zoning.shp)
+// ─────────────────────────────────────────────
+const ZONE_COLORS = {
+  // Residential
+  'SR-1': '#c8e6c9',  // Suburban Residential 1
+  'SR-2': '#a5d6a7',  // Suburban Residential 2
+  'MR-5': '#81c784',  // Mature Residential 5
+  'ER-3': '#dcedc8',  // Eclectic Residential 3
+  'ER-4': '#f0f4c3',  // Eclectic Residential 4
+  'MH':   '#ffe082',  // Manufactured Home
+  // Multi-family
+  'SMF':  '#fff9c4',
+  'MMF':  '#fff176',
+  'EMF':  '#ffee58',
+  // Commercial
+  'SNC':  '#ffe0b2',
+  'MNC':  '#ffcc80',
+  'ENC':  '#ffb74d',
+  'SGC':  '#ff8a65',
+  'MGC':  '#ff7043',
+  'EGC':  '#f4511e',
+  'CBD':  '#ef9a9a',
+  'UBD':  '#e57373',
+  'BP':   '#ce93d8',
+  'MX':   '#ba68c8',
+  // Institutional / civic
+  'CI':   '#b3e5fc',
+  'OS':   '#b9f6ca',
+  'AIRPORT': '#cfd8dc',
+  'WO':   '#d7ccc8',
+  // Industrial
+  'I-1':  '#ffcdd2',
+  'I-2':  '#ef9a9a',
+  // Transitional / unknown
+  'T':    '#e0e0e0',
+  'DEFAULT': '#eeeeee',
+};
+
+const ZONE_NAMES = {
+  'SR-1': 'Suburban Residential 1',
+  'SR-2': 'Suburban Residential 2',
+  'MR-5': 'Mature Residential 5',
+  'ER-3': 'Eclectic Residential 3',
+  'ER-4': 'Eclectic Residential 4',
+  'MH':   'Manufactured Home District',
+  'SMF':  'Suburban Multi-Family',
+  'MMF':  'Mature Multi-Family',
+  'EMF':  'Eclectic Multi-Family',
+  'SNC':  'Suburban Neighborhood Commercial',
+  'MNC':  'Mature Neighborhood Commercial',
+  'ENC':  'Eclectic Neighborhood Commercial',
+  'SGC':  'Suburban General Commercial',
+  'MGC':  'Mature General Commercial',
+  'EGC':  'Eclectic General Commercial',
+  'CBD':  'Central Business District',
+  'UBD':  'Urban Business District',
+  'BP':   'Business Park',
+  'MX':   'Mixed Use Hub District',
+  'CI':   'Campus-Institutional',
+  'OS':   'Open Space',
+  'AIRPORT': 'Airport',
+  'WO':   'Well Head Operation',
+  'I-1':  'Light Industrial',
+  'I-2':  'General Industrial',
+  'T':    'Transitional',
+};
+
+// Residential zones where chickens are permitted with a permit
+const CHICKEN_PERMITTED    = new Set(['SR-1', 'SR-2', 'MR-5']);
+const CHICKEN_CONDITIONAL  = new Set(['ER-3', 'ER-4', 'MH', 'SMF', 'MMF', 'EMF']);
+const CHICKEN_NOT_PERMITTED = new Set(['CBD', 'UBD', 'BP', 'SGC', 'MGC', 'EGC', 'SNC', 'MNC', 'ENC', 'CI', 'I-1', 'I-2', 'AIRPORT', 'MX']);
+
+// ─────────────────────────────────────────────
+// SAMPLE FALLBACK DATA
+// Used when the live ArcGIS endpoint is unavailable.
+// 15 representative Dayton parcels across real neighborhoods.
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let selectedLayer   = null;
+let lastParcelData  = null;
+let zoningFeatures  = [];   // loaded once from /zoning
+
+// ─────────────────────────────────────────────
+// POINT-IN-POLYGON  (ray-casting, handles Polygon + MultiPolygon)
+// ─────────────────────────────────────────────
+function pipRing(x, y, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    if (yi === yj) continue;                               // skip horizontal edges
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi)
+      inside = !inside;
+  }
+  return inside;
+}
+
+function pointInFeature(lng, lat, feature) {
+  const g = feature.geometry;
+  if (!g) return false;
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  for (const rings of polys) {
+    if (pipRing(lng, lat, rings[0])) {  // exterior ring
+      // check holes
+      let inHole = false;
+      for (let h = 1; h < rings.length; h++) {
+        if (pipRing(lng, lat, rings[h])) { inHole = true; break; }
+      }
+      if (!inHole) return true;
+    }
+  }
+  return false;
+}
+
+function findZone(latlng) {
+  const { lng, lat } = latlng;
+  for (const f of zoningFeatures) {
+    if (pointInFeature(lng, lat, f)) return f.properties;
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────
+// MAP SETUP
+// ─────────────────────────────────────────────
+const map = L.map('map').setView(DAYTON_CENTER, DAYTON_ZOOM);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19,
+}).addTo(map);
+
+// Zoning layer — loaded once, sits below parcel outlines
+const zoningLayer = L.geoJSON(null, {
+  style(feature) {
+    const code = feature.properties.ZONE_CODE?.trim().toUpperCase();
+    return {
+      fillColor:   ZONE_COLORS[code] || ZONE_COLORS.DEFAULT,
+      fillOpacity: 0.55,
+      color:       '#aaa',
+      weight:      0.5,
+      opacity:     0.7,
+    };
+  },
+  onEachFeature(feature, layer) {
+    const p = feature.properties;
+    layer.bindTooltip(`${p.ZONE_CODE} — ${p.ZONE_DESC}`, { sticky: true, className: 'zone-tip' });
+  },
+}).addTo(map);
+
+async function loadZoning() {
+  try {
+    const res = await fetch(`${PARCEL_SERVER.replace('/parcels', '/zoning')}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    zoningFeatures = data.features || [];
+    zoningLayer.addData(data);
+    buildLegend();
+  } catch (err) {
+    console.warn('Zoning layer unavailable:', err.message);
+  }
+}
+
+// ─────────────────────────────────────────────
+// FIELD EXTRACTION — handles multiple possible field names
+// ─────────────────────────────────────────────
+function getField(props, candidates) {
+  for (const c of candidates) {
+    if (props[c] !== undefined && props[c] !== null && props[c] !== '') return props[c];
+    // also try uppercase and lowercase variants
+    const up = c.toUpperCase();
+    const lo = c.toLowerCase();
+    if (props[up] !== undefined && props[up] !== null && props[up] !== '') return props[up];
+    if (props[lo] !== undefined && props[lo] !== null && props[lo] !== '') return props[lo];
+  }
+  return null;
+}
+
+function extractParcelFields(props, zoneProps) {
+  const acres    = props.ACRES != null ? parseFloat(props.ACRES) || null : null;
+  const zoneCode = zoneProps?.ZONE_CODE?.trim().toUpperCase() || null;
+  const zoneDesc = zoneProps?.ZONE_DESC || null;
+
+  return {
+    parcelId:  props.TAXPINNO || '—',
+    address:   props.ADDRESS  || 'Address unknown',
+    zoneCode,
+    zoneName:  zoneCode ? (ZONE_NAMES[zoneCode] || zoneCode) : 'Zone not found',
+    zoneDesc,
+    acres,
+    sqft:      acres ? Math.round(acres * 43560).toLocaleString() : (props.SQFT ? Number(props.SQFT).toLocaleString() : null),
+    propClass: props.USE_DESC || props.PARCEL_USE || null,
+  };
+}
+
+// ─────────────────────────────────────────────
+// PARCEL STYLING
+// ─────────────────────────────────────────────
+function zoneColor(zone) {
+  const z = (zone || '').trim().toUpperCase();
+  return ZONE_COLORS[z] || ZONE_COLORS.DEFAULT;
+}
+
+function parcelStyle() {
+  return { fillColor: 'transparent', fillOpacity: 0, color: '#888', weight: 0.6, opacity: 0.5 };
+}
+
+function highlightStyle() {
+  return { color: '#1a5276', weight: 2.5, fillOpacity: 0.75, opacity: 1 };
+}
+
+// ─────────────────────────────────────────────
+// PANEL RENDERING
+// ─────────────────────────────────────────────
+function renderPanel(parcel) {
+  const color = zoneColor(parcel.zoneCode);
+  const z = parcel.zoneCode;
+
+  // Chicken status + rules
+  let chickenStatus, chickenRules;
+  if (!z) {
+    chickenStatus = '<span style="color:#777">Zone not found — click inside a parcel boundary</span>';
+    chickenRules  = '';
+  } else if (CHICKEN_NOT_PERMITTED.has(z)) {
+    chickenStatus = '<span style="color:#c62828">✗ Not permitted in this zone</span>';
+    chickenRules  = '<ul class="reg-rules"><li>Chickens are only allowed in residential zones</li></ul>';
+  } else if (CHICKEN_PERMITTED.has(z)) {
+    chickenStatus = '<span style="color:#2e7d32">✓ Permitted (with zoning permit)</span>';
+    chickenRules  = `<ul class="reg-rules">
+      <li>Maximum <strong>4 hens</strong> — no roosters ever</li>
+      <li><strong>Permit required</strong> from the Zoning Division before acquiring birds</li>
+      <li>Coop must be <strong>25 ft</strong> from any neighbor's door or window</li>
+      <li>Min. 4 sq ft/bird inside coop; 10 sq ft/bird in outdoor run</li>
+      <li>Must be kept in enclosed run — no free-roaming</li>
+      <li>Personal use only; no commercial egg sales</li>
+    </ul>`;
+  } else if (CHICKEN_CONDITIONAL.has(z)) {
+    chickenStatus = '<span style="color:#e65100">⚠ Conditional use — ZBA approval required</span>';
+    chickenRules  = `<ul class="reg-rules">
+      <li>Must apply to the <strong>Zoning Board of Appeals</strong> for a conditional use permit</li>
+      <li>If approved: max 4 hens, no roosters, same coop/setback rules apply</li>
+      <li>Approval is not guaranteed — contact Zoning Division first</li>
+    </ul>`;
+  } else {
+    chickenStatus = '<span style="color:#777">Zone type unclear — verify with City</span>';
+    chickenRules  = '';
+  }
+
+  // Rabbit status — allowed in all residential, not elsewhere
+  const isResidential = z && (CHICKEN_PERMITTED.has(z) || CHICKEN_CONDITIONAL.has(z));
+  let rabbitStatus, rabbitRules;
+  if (!z) {
+    rabbitStatus = '<span style="color:#777">Zone not found</span>';
+    rabbitRules  = '';
+  } else if (isResidential) {
+    rabbitStatus = '<span style="color:#2e7d32">✓ Permitted as pets</span>';
+    rabbitRules  = `<ul class="reg-rules">
+      <li>Up to <strong>4 rabbits outdoors</strong> without a special permit</li>
+      <li>Outdoor hutch must be <strong>5 ft</strong> from property lines</li>
+      <li><strong>Indoor rabbits</strong>: no limit, no permit needed</li>
+      <li>No commercial breeding without a special use permit</li>
+    </ul>`;
+  } else {
+    rabbitStatus = '<span style="color:#c62828">✗ Not permitted in this zone</span>';
+    rabbitRules  = '<ul class="reg-rules"><li>Rabbits as outdoor animals are limited to residential zones</li></ul>';
+  }
+
+  document.getElementById('panel-content').innerHTML = `
+    <div class="parcel-header">${parcel.address}</div>
+    <div class="zone-badge" style="background:${color}; color:#333;">${z ? z + ' · ' : ''}${parcel.zoneName}</div>
+
+    <table class="detail-table">
+      <tr><td>Lot size</td><td>${parcel.acres != null ? parcel.acres + ' ac' : '—'}${parcel.sqft ? ' · ' + parcel.sqft + ' sq ft' : ''}</td></tr>
+      ${parcel.propClass ? `<tr><td>Use type</td><td>${parcel.propClass}</td></tr>` : ''}
+      <tr><td>Parcel ID</td><td style="font-size:0.78rem;color:#555">${parcel.parcelId}</td></tr>
+    </table>
+
+    <hr class="divider">
+
+    <div class="reg-section">
+      <div class="reg-heading">🐔 Backyard Chickens</div>
+      <div class="reg-status">${chickenStatus}</div>
+      ${chickenRules}
+    </div>
+
+    <div class="reg-section">
+      <div class="reg-heading">🐇 Domestic Rabbits</div>
+      <div class="reg-status">${rabbitStatus}</div>
+      ${rabbitRules}
+    </div>
+
+    <div class="reg-sources">
+      <strong>Official sources:</strong><br>
+      <a href="https://library.municode.com/oh/dayton/codes/code_of_ordinances" target="_blank" rel="noopener">
+        Dayton Code of Ordinances (Municode)
+      </a> — Ch. 91 (Animals), Ch. 150 (Zoning)<br>
+      <a href="https://www.daytonohio.gov/229/Zoning-Code-Map" target="_blank" rel="noopener">
+        City of Dayton Zoning Division
+      </a> · (937) 333-3910
+    </div>
+  `;
+}
+
+// ─────────────────────────────────────────────
+// CLICK HANDLER
+// ─────────────────────────────────────────────
+function onParcelClick(e) {
+  const layer = e.target;
+
+  if (selectedLayer && selectedLayer !== layer) {
+    selectedLayer.setStyle(parcelStyle());
+    selectedLayer.bringToBack();
+  }
+
+  layer.setStyle(highlightStyle());
+  layer.bringToFront();
+  selectedLayer = layer;
+
+  // Use the parcel's bounds center for zone lookup — more reliable than the raw
+  // click latlng, which can land exactly on a polygon edge when fill is transparent.
+  const zoneProps = findZone(layer.getBounds().getCenter());
+  lastParcelData  = extractParcelFields(layer.feature.properties, zoneProps);
+
+  renderPanel(lastParcelData);
+  L.DomEvent.stopPropagation(e);
+}
+
+// ─────────────────────────────────────────────
+// PARCEL LAYER — viewport-based loading
+// ─────────────────────────────────────────────
+let parcelLayer = L.geoJSON(null, {
+  style: parcelStyle,
+  onEachFeature(feature, layer) {
+    layer.on({
+      mouseover() {
+        if (layer !== selectedLayer)
+          layer.setStyle({ color: '#444', weight: 1.5, fillOpacity: 0.75 });
+      },
+      mouseout() {
+        if (layer !== selectedLayer) layer.setStyle(parcelStyle(feature));
+      },
+      click: onParcelClick,
+    });
+  },
+}).addTo(map);
+
+let loadTimer    = null;
+let isLoading    = false;
+let serverOnline = null; // null = untested, true/false after first attempt
+
+function bboxParam() {
+  const b = map.getBounds();
+  return [
+    b.getWest().toFixed(6),
+    b.getSouth().toFixed(6),
+    b.getEast().toFixed(6),
+    b.getNorth().toFixed(6),
+  ].join(',');
+}
+
+const MIN_PARCEL_ZOOM = 15;  // below this, parcels are too small to usefully click
+
+function clearSelection() {
+  selectedLayer = null;
+  lastParcelData = null;
+}
+
+function clearParcels() {
+  // Null out selectedLayer BEFORE clearLayers() so nothing re-appends its SVG element
+  clearSelection();
+  parcelLayer.clearLayers();
+}
+
+async function loadViewport() {
+  // Always dismiss the initial spinner, regardless of zoom
+  const overlay = document.getElementById('load-overlay');
+  if (overlay) overlay.remove();
+
+  if (map.getZoom() < MIN_PARCEL_ZOOM) {
+    clearParcels();
+    removeBanner('cap');
+    return;
+  }
+
+  if (isLoading) return;
+  isLoading = true;
+
+  const url = `${PARCEL_SERVER}?bbox=${bboxParam()}`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const geojson = await res.json();
+
+    serverOnline = true;
+    clearParcels();
+    parcelLayer.addData(geojson);
+
+    if (geojson._capped) showBanner('cap',
+      `Showing first 3,000 parcels — zoom in to see all parcels in this area.`);
+    else removeBanner('cap');
+
+    console.info(`Loaded ${geojson._count} parcels`);
+  } catch (err) {
+    serverOnline = false;
+    showBanner('server-error',
+      `<strong>Parcel server not running.</strong> Start it with: <code>python3 server.py</code>`);
+    console.warn('Parcel server error:', err.message);
+  } finally {
+    isLoading = false;
+  }
+}
+
+function scheduleLoad() {
+  clearTimeout(loadTimer);
+  loadTimer = setTimeout(loadViewport, 300);
+  // Update zoom hint on the placeholder panel
+  if (map.getZoom() < MIN_PARCEL_ZOOM) {
+    const content = document.getElementById('panel-content');
+    if (content && !lastParcelData) {
+      content.innerHTML = `<div class="panel-placeholder">
+        <span class="emoji">🔍</span>
+        Zoom in further to load individual parcels, then click one to check animal rules.
+      </div>`;
+    }
+  }
+}
+
+map.on('moveend zoomend', scheduleLoad);
+
+// ─────────────────────────────────────────────
+// BANNERS
+// ─────────────────────────────────────────────
+const banners = {};
+
+function showBanner(id, html) {
+  if (banners[id]) return;
+  const el = document.createElement('div');
+  el.style.cssText = `
+    position:absolute; top:10px; left:50%; transform:translateX(-50%);
+    background:#fff3cd; border:1px solid #ffc107; border-radius:6px;
+    padding:8px 14px; font-size:0.8rem; color:#555; z-index:1000;
+    max-width:460px; text-align:center; box-shadow:0 1px 6px rgba(0,0,0,0.15);
+    white-space:nowrap;
+  `;
+  el.innerHTML = html +
+    `<button onclick="removeBanner('${id}')" style="border:none;background:none;cursor:pointer;margin-left:8px;font-size:1rem;">✕</button>`;
+  document.getElementById('map').appendChild(el);
+  banners[id] = el;
+}
+
+window.removeBanner = function(id) {
+  if (banners[id]) { banners[id].remove(); delete banners[id]; }
+};
+
+// ─────────────────────────────────────────────
+// LEGEND — built from the loaded zoning features
+// ─────────────────────────────────────────────
+function buildLegend() {
+  const seen = new Map(); // code → name
+  for (const f of zoningFeatures) {
+    const code = f.properties.ZONE_CODE?.trim().toUpperCase();
+    if (code && !seen.has(code)) seen.set(code, ZONE_NAMES[code] || f.properties.ZONE_DESC || code);
+  }
+
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '<span class="legend-title">Zone</span>';
+  for (const [code, name] of [...seen].sort()) {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `<div class="legend-swatch" style="background:${ZONE_COLORS[code] || ZONE_COLORS.DEFAULT}"></div>${code}<span class="legend-tooltip">${name}</span>`;
+    legend.appendChild(item);
+  }
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+loadZoning();   // loads zoning polygons + rebuilds legend
+loadViewport(); // loads parcel outlines for current viewport
+</script>
+
+</body>
+</html>
