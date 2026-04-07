@@ -336,8 +336,9 @@ const FIELD_CANDIDATES = {
 let activeCity      = CITIES[0];   // default: Dayton
 let selectedLayer   = null;
 let lastParcelData  = null;
-let allZoningFeatures = [];  // all features loaded from /zoning
+let allZoningFeatures = [];  // all features loaded from /zoning (for the current county)
 let zoningFeatures    = [];  // filtered to activeCity
+const zoningCache     = {};  // county → features[], loaded once per county
 
 // ─────────────────────────────────────────────
 // POINT-IN-POLYGON  (ray-casting, handles Polygon + MultiPolygon)
@@ -407,12 +408,20 @@ const zoningLayer = L.geoJSON(null, {
   },
 }).addTo(map);
 
-async function loadZoning() {
+async function loadZoning(county = 'montgomery') {
+  // Serve from cache if already loaded for this county
+  if (zoningCache[county]) {
+    allZoningFeatures = zoningCache[county];
+    applyZoningForCity(activeCity);
+    return;
+  }
   try {
-    const res = await fetch(`${PARCEL_SERVER.replace('/parcels', '/zoning')}`);
+    const url = `${PARCEL_SERVER.replace('/parcels', '/zoning')}?county=${county}`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    allZoningFeatures = data.features || [];
+    zoningCache[county] = data.features || [];
+    allZoningFeatures   = zoningCache[county];
     applyZoningForCity(activeCity);
   } catch (err) {
     console.warn('Zoning layer unavailable:', err.message);
@@ -438,10 +447,20 @@ function applyZoningForCity(city) {
 window.switchCity = function(id) {
   const city = CITIES_BY_ID[id];
   if (!city || city === activeCity) return;
+  const prevCounty = activeCity.county || 'montgomery';
   activeCity = city;
+  const newCounty  = city.county || 'montgomery';
 
   map.setView(city.center, city.zoom);
-  applyZoningForCity(city);
+
+  if (newCounty !== prevCounty) {
+    // Different county — fetch (or restore from cache) the other county's zoning
+    allZoningFeatures = [];
+    zoningLayer.clearLayers();
+    loadZoning(newCounty);
+  } else {
+    applyZoningForCity(city);
+  }
 
   // Clear any selected parcel and reset the panel
   if (selectedLayer) {
@@ -699,7 +718,7 @@ async function loadViewport() {
   if (isLoading) return;
   isLoading = true;
 
-  const url = `${PARCEL_SERVER}?bbox=${bboxParam()}`;
+  const url = `${PARCEL_SERVER}?bbox=${bboxParam()}&county=${activeCity.county || 'montgomery'}`;
 
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
@@ -809,7 +828,7 @@ for (const city of CITIES) {
   citySelect.appendChild(opt);
 }
 
-loadZoning();   // loads zoning polygons + rebuilds legend
+loadZoning(activeCity.county || 'montgomery');   // loads zoning polygons + rebuilds legend
 loadViewport(); // loads parcel outlines for current viewport
 </script>
 
